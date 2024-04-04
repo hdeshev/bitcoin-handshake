@@ -1,14 +1,15 @@
 package client
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"log/slog"
+	"math/rand"
 	"net"
 	"time"
+
+	"github.com/pkg/errors"
 
 	"deshev.com/bitcoin-handshake/btc/encoding"
 	"deshev.com/bitcoin-handshake/config"
@@ -29,6 +30,7 @@ func New(ctx context.Context, log *slog.Logger, cfg *config.Config) *BTCClient {
 	}
 }
 
+//nolint:funlen // TODO
 func (c *BTCClient) Connect() error {
 	c.log.Info("connecting to bitcoin node", "address", c.nodeAddress)
 
@@ -42,35 +44,43 @@ func (c *BTCClient) Connect() error {
 	c.conn = conn
 	go c.watchContext()
 
-	reader := bufio.NewReader(conn)
-	writer := bufio.NewWriter(conn)
+	var reader io.Reader = conn
+	var writer io.Writer = conn
 
 	versionCommand := [12]byte{}
 	commandStr := "version"
 	copy(versionCommand[:], commandStr)
 
-	headerSize := 24
-
-	version := &encoding.MsgVersion{
-		Version:   encoding.ProtocolVersion,
-		Services:  0,
-		Timestamp: encoding.UInt64(time.Now().Unix()),
-
-		Nonce: 1, // TODO: Generate random nonce
-	}
-	versionBuf := bytes.NewBuffer(nil)
-	err = version.Encode(versionBuf)
+	addrFrom, err := encoding.NewIP4Address(0, "0.0.0.0:0")
 	if err != nil {
-		c.log.Error("failed serializing version", "error", err)
+		return errors.Wrap(err, "failed to create from address")
+	}
+	addrRecv, err := encoding.NewIP4Address(0, c.nodeAddress)
+	if err != nil {
+		return errors.Wrap(err, "failed to create recv address")
+	}
+	version, err := encoding.NewVersionMsg(
+		encoding.NetworkRegtest,
+		time.Now(),
+		0,
+		addrRecv,
+		addrFrom,
+		uint64(rand.Int63()), //nolint:gosec // not a crypto random
+		1,
+	)
+	if err != nil {
+		return errors.Wrap(err, "failed to create version message")
 	}
 
-	n, err := io.Copy(writer, versionBuf)
-	c.log.Info("wrote version msg", "n", n, "error", err)
-	writer.Flush()
+	err = version.Encode(writer)
+	if err != nil {
+		return errors.Wrap(err, "failed serializing version")
+	}
 
+	headerSize := 24
 	inHeader := make([]byte, headerSize)
 	nn, err := io.ReadFull(reader, inHeader)
-	c.log.Info("read data", "nn", nn, "data", string(inHeader), "error", err)
+	c.log.Info("read data", "nn", nn, "size", len(inHeader), "data", string(inHeader), "error", err)
 
 	return fmt.Errorf("TODO")
 }

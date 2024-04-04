@@ -19,16 +19,15 @@ type Header struct {
 type MsgVersion struct {
 	network Network
 
-	Version       UInt32 // 70015
-	Services      Services
-	Timestamp     UInt64
-	AddrRecv      NetworkAddress
-	AddrFrom      NetworkAddress
-	Nonce         UInt64
-	UserAgentSize byte // TODO: CompactSize encoding
-	UserAgent     VarStr
-	StartHeight   UInt32
-	Relay         bool
+	Version     UInt32 // 70015
+	Services    Services
+	Timestamp   UInt64
+	AddrRecv    NetworkAddress
+	AddrFrom    NetworkAddress
+	Nonce       UInt64
+	UserAgent   VarStr
+	StartHeight UInt32
+	Relay       UInt8
 }
 
 type Network uint
@@ -113,6 +112,7 @@ func NewVersionMsg(
 		AddrFrom:    *addrFrom,
 		Nonce:       UInt64(nonce),
 		StartHeight: UInt32(startHeight),
+		Relay:       UInt8(0),
 	}
 	return version, nil
 }
@@ -151,6 +151,7 @@ func (version *MsgVersion) Encode(writer io.Writer) error {
 		step("nonce", version.Nonce),
 		step("user_agent", version.UserAgent),
 		step("start_height", version.StartHeight),
+		step("relay", version.Relay),
 	)
 	if err != nil {
 		return fmt.Errorf("error serializing message fields: %w", err)

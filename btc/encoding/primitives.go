@@ -56,7 +56,7 @@ func (s Services) Encode(writer io.Writer) error {
 type IP net.IP
 
 func (ip IP) Encode(writer io.Writer) error {
-	_, err := writer.Write(ip)
+	_, err := writer.Write(net.IP(ip).To16())
 	return errors.Wrap(err, "ip address write error")
 }
 
