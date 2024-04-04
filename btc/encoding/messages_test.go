@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func Test_SerializeHeader(t *testing.T) {
+func Test_Header_Encode(t *testing.T) {
 	versionCommand := [12]byte{}
 	commandStr := "version"
 	copy(versionCommand[:], commandStr)
@@ -67,7 +67,7 @@ func Test_SerializeHeader(t *testing.T) {
 	}
 }
 
-func Test_SerializeNetworkAddress(t *testing.T) {
+func Test_NetworkAddress_Encode(t *testing.T) {
 	testTime := time.Date(2024, time.April, 1, 0, 0, 0, 0, time.UTC)
 	tests := []struct {
 		name   string
@@ -112,7 +112,7 @@ func Test_SerializeNetworkAddress(t *testing.T) {
 	}
 }
 
-func Test_SerializeVersion(t *testing.T) {
+func Test_Version_Encode(t *testing.T) {
 	docsTime := time.Unix(0x50D0B211, 0)
 	recvAddr := noErr(t, func() (*NetworkAddress, error) {
 		return NewIP4Address(ServicesNodeNetwork, "0.0.0.0:0")
