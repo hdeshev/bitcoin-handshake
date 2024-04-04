@@ -24,7 +24,7 @@ func Test_Header_Encode(t *testing.T) {
 		want   string
 	}{
 		{
-			name: "version only",
+			name: "mainnet",
 			header: noErr(t, func() (*Header, error) {
 				return NewHeader(NetworkMainnet, VersionCommand, payload)
 			}),
@@ -34,7 +34,7 @@ func Test_Header_Encode(t *testing.T) {
 			),
 		},
 		{
-			name: "version only",
+			name: "testnet",
 			header: noErr(t, func() (*Header, error) {
 				return NewHeader(NetworkTestnet3, VersionCommand, payload)
 			}),
@@ -44,7 +44,7 @@ func Test_Header_Encode(t *testing.T) {
 			),
 		},
 		{
-			name: "version only",
+			name: "regtest",
 			header: noErr(t, func() (*Header, error) {
 				return NewHeader(NetworkRegtest, VersionCommand, payload)
 			}),
