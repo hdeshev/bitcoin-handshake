@@ -17,6 +17,7 @@ func main() {
 	app := internal.NewApplication(ctx, log)
 	log.Info("starting bitcoin-handshake")
 
+	ops.Go(app.StartConnection)
 	ops.Go(app.StartSignalMonitor)
 
 	err := ops.Wait()
