@@ -14,13 +14,15 @@ Losing connectivity, canceling the client parent context, or other network or pa
 
 ### Encoding and Decoding
 
-I tried to isolate the different types of objects that can be encoded or decoded from the network. Those can be of different types:
+Encoding (the `btc/encoding` package) code has been broken up according to the different types of objects that we can receive from the network. Those can be:
 
-- primitives: numbers and fixed-size strings.
-- common objects: network addresses, varint, varstr, etc.
-- messages: version, verack
+- primitives: numbers and fixed-size strings. Those live in `primitives.go`
+- common objects: network addresses, varint, varstr, etc. Also in `primitives.go`
+- messages: version, verack. Each message is in a separate file.
 
-I have added a "raw" message type that only reads the full message from the network and passes it to the handler without parsing the body. This is useful for testing and debugging.
+The `messages.go` entrypoint contains tools to build headers and create the right message according to the header command.
+
+We also have a "raw" message type that only reads the full message from the network and passes it to the handler without parsing the body. This is useful for testing and debugging.
 
 ## Deployment
 
@@ -44,8 +46,8 @@ The message parser doesn't verify message checksums in the headers either. That 
 
 ## Testing
 
-- I have added unit tests for the individual components. Coverage is not at 100%, but we could easily get there. Looking at the coverage report we are missing mostly error handling and logging branches that should be easy to test.
-- We are close to doing a proper integration test. We have the building blocks to build a TCP server that can speak the handshake on the remote part. The `Test_Client_Connect_and_Cleanup` in `client_test.go` can be used as a starting point for that.
+- Unit tests are in place for the individual components. Coverage is not at 100%, but we could easily get there. Looking at the coverage report we are missing mostly error handling and logging branches and encode/decode for some of the primitives. Those should be easy to add.
+- The code is close to doing a full integration test. It already has the building blocks to build a TCP server that can speak the handshake on the remote part. The `Test_Client_Connect_and_Cleanup` in `client_test.go` can be used as a starting point for that.
 - E2E tests should be possible. We can have a test suite running in Docker Compose that spins up a real Bitcoin node and runs tests connecting to it.
 
 ## Monitoring and Logging
