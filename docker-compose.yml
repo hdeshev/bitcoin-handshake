@@ -1,0 +1,29 @@
+version: '3'
+services:
+  node:
+    image: cryptodockerhub/bitcoin-core:latest
+    expose:
+      - "18443"
+      - "18444"
+      - "18445"
+    ports:
+      - "18443:18443"
+      - "18444:18444"
+      - "18445:18445"
+    volumes:
+      - ./.bitcoin:/data
+    command:
+      - bitcoind
+      - -datadir=/data
+      - -conf=bitcoin.conf
+      - -regtest
+
+  client:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - BTC_NODE_ADDRESS=node:18444
+    depends_on:
+      node:
+        condition: service_started
