@@ -4,7 +4,7 @@ Build a rudimentary client for the Bitcoin P2P binary protocol so we can complet
 
 Architecture description in [ARCHITECTURE](ARCHITECTURE.md)
 
-Looking for the quickstart? Scroll to the Docker Compose section below.
+🚀 Looking for the quickstart? Scroll to the Docker Compose section below.
 
 ## Prerequisites
 
@@ -119,4 +119,63 @@ node-1  | 2024-04-05T14:45:55Z [net] sending feefilter (8 bytes) peer=1
 node-1  | 2024-04-05T14:45:56Z [net] socket closed for peer=1
 node-1  | 2024-04-05T14:45:56Z [net] disconnecting peer=1
 node-1  | 2024-04-05T14:45:56Z [net] Cleared nodestate for peer=1
+```
+
+You can flip to a separate console and ask the Bitcoin node for its peer state to confirm our client has connected using the `getpeerinfo` command
+
+```
+❯ bitcoin-cli -regtest -conf="$(pwd)/.bitcoin/bitcoin.conf" getpeerinfo
+[
+  {
+    "id": 2,
+    "addr": "192.168.16.3:35492",
+    "addrbind": "192.168.16.2:18444",
+    "addrlocal": "192.168.16.2:18444",
+    "network": "not_publicly_routable",
+    "services": "0000000000000000",
+    "servicesnames": [
+    ],
+    "relaytxes": false,
+    "lastsend": 1712330273,
+    "lastrecv": 1712330273,
+    "last_transaction": 0,
+    "last_block": 0,
+    "bytessent": 247,
+    "bytesrecv": 152,
+    "conntime": 1712330273,
+    "timeoffset": 0,
+    "pingwait": 6.55446,
+    "version": 70015,
+    "subver": "/MemeClient:0.0.1/",
+    "inbound": true,
+    "bip152_hb_to": false,
+    "bip152_hb_from": false,
+    "startingheight": 1,
+    "presynced_headers": -1,
+    "synced_headers": -1,
+    "synced_blocks": -1,
+    "inflight": [
+    ],
+    "addr_relay_enabled": false,
+    "addr_processed": 0,
+    "addr_rate_limited": 0,
+    "permissions": [
+    ],
+    "minfeefilter": 0.00000000,
+    "bytessent_per_msg": {
+      "feefilter": 32,
+      "ping": 32,
+      "sendcmpct": 33,
+      "verack": 24,
+      "version": 126
+    },
+    "bytesrecv_per_msg": {
+      "verack": 24,
+      "version": 128
+    },
+    "connection_type": "inbound",
+    "transport_protocol_type": "v1",
+    "session_id": ""
+  }
+]
 ```
