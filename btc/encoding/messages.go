@@ -5,8 +5,6 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
-
-	"github.com/davecgh/go-spew/spew"
 )
 
 type Header struct {
@@ -28,6 +26,7 @@ type Command string
 
 const (
 	VersionCommand Command = "version"
+	VerackCommand  Command = "verack"
 )
 
 const (
@@ -35,18 +34,11 @@ const (
 	UserAgent       = "/MemeClient:0.0.1/"
 )
 
-type Services UInt64
+type Message interface {
+	Encodable
 
-const (
-	ServicesNone               Services = 0
-	ServicesNodeNetwork        Services = 1
-	ServicesNodeGetUTXO        Services = 2
-	ServicesNodeBloom          Services = 4
-	ServicesNodeWitness        Services = 8
-	ServicesNodeXThin          Services = 16
-	ServicesNodeCompactFilters Services = 64
-	ServicesNodeNetworkLimited Services = 1024
-)
+	GetCommand() Command
+}
 
 func NewHeader(network Network, command Command, payload []byte) (*Header, error) {
 	var magic [4]byte
@@ -96,14 +88,14 @@ func (header *Header) Decode(reader io.Reader) error {
 }
 
 // Builds a header and sends it and the message to the writer.
-func SendMessage(network Network, message Encodable, writer io.Writer) error {
+func SendMessage(network Network, message Message, writer io.Writer) error {
 	msgBuf := bytes.NewBuffer(nil)
 
 	err := message.Encode(msgBuf)
 	if err != nil {
 		return fmt.Errorf("error encoding message: %w", err)
 	}
-	header, err := NewHeader(network, VersionCommand, msgBuf.Bytes())
+	header, err := NewHeader(network, message.GetCommand(), msgBuf.Bytes())
 	if err != nil {
 		return fmt.Errorf("error creating header: %w", err)
 	}
@@ -119,25 +111,25 @@ func SendMessage(network Network, message Encodable, writer io.Writer) error {
 	return nil
 }
 
-func createMessage(command Command) (Encodable, error) {
-	b := []byte(command)
-	spew.Dump(b)
-	switch command {
+func createMessage(header *Header) (Message, error) {
+	switch header.GetCommand() {
 	case VersionCommand:
 		return &MsgVersion{}, nil
+	case VerackCommand:
+		return &MsgVerack{}, nil
 	default:
-		return nil, fmt.Errorf("unknown command: '%s'", command)
+		return NewRawMsg(header)
 	}
 }
 
-func ReceiveMessage(reader io.Reader) (*Header, Encodable, error) {
+func ReceiveMessage(reader io.Reader) (*Header, Message, error) {
 	header := &Header{}
 	err := header.Decode(reader)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error decoding header: %w", err)
 	}
 
-	msg, err := createMessage(header.GetCommand())
+	msg, err := createMessage(header)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error creating message: %w", err)
 	}

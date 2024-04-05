@@ -40,6 +40,10 @@ func NewVersionMsg(
 	return version, nil
 }
 
+func (version *MsgVersion) GetCommand() Command {
+	return VersionCommand
+}
+
 func (version *MsgVersion) Encode(writer io.Writer) error {
 	err := encode(writer,
 		step("version", &version.Version),

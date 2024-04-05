@@ -9,7 +9,6 @@ import (
 	"net"
 	"time"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/pkg/errors"
 
 	"deshev.com/bitcoin-handshake/btc/encoding"
@@ -31,7 +30,7 @@ func New(ctx context.Context, log *slog.Logger, cfg *config.Config) *BTCClient {
 	}
 }
 
-//nolint:funlen // TODO
+//nolint:funlen,cyclop // TODO
 func (c *BTCClient) Connect() error {
 	c.log.Info("connecting to bitcoin node", "address", c.nodeAddress)
 
@@ -47,10 +46,6 @@ func (c *BTCClient) Connect() error {
 
 	var reader io.Reader = conn
 	var writer io.Writer = conn
-
-	versionCommand := [12]byte{}
-	commandStr := "version"
-	copy(versionCommand[:], commandStr)
 
 	addrFrom, err := encoding.NewIP4Address(0, "0.0.0.0:0")
 	if err != nil {
@@ -77,18 +72,40 @@ func (c *BTCClient) Connect() error {
 		return errors.Wrap(err, "failed sending version")
 	}
 
-	header, msg, err := encoding.ReceiveMessage(reader)
+	_, msg, err := encoding.ReceiveMessage(reader)
 	if err != nil {
-		return errors.Wrap(err, "failed receiving message")
+		return errors.Wrap(err, "failed receiving first message")
 	}
-	spew.Dump(header)
-	spew.Dump(msg)
+	c.log.Info("received handshake message", "command", string(msg.GetCommand()))
 
-	return fmt.Errorf("TODO")
+	verack, err := encoding.NewVerackMsg()
+	if err != nil {
+		return errors.Wrap(err, "failed to create verack message")
+	}
+	err = encoding.SendMessage(encoding.NetworkRegtest, verack, writer)
+	if err != nil {
+		return errors.Wrap(err, "failed sending version")
+	}
+
+	_, msg, err = encoding.ReceiveMessage(reader)
+	if err != nil {
+		return errors.Wrap(err, "failed receiving second message")
+	}
+	c.log.Info("received handshake message", "command", string(msg.GetCommand()))
+
+	c.log.Info("connected to bitcoin node", "address", c.nodeAddress)
+
+	for {
+		_, msg, err = encoding.ReceiveMessage(reader)
+		if err != nil {
+			return errors.Wrap(err, "failed receiving message")
+		}
+		c.log.Info("received message", "command", string(msg.GetCommand()))
+	}
 }
 
 func (c *BTCClient) watchContext() {
 	<-c.ctx.Done()
-	c.log.Info("context done")
+	c.log.Info("terminating client")
 	c.conn.Close()
 }

@@ -94,6 +94,19 @@ func (ui *UInt64) Decode(reader io.Reader) error {
 	return nil
 }
 
+type Services UInt64
+
+const (
+	ServicesNone               Services = 0
+	ServicesNodeNetwork        Services = 1
+	ServicesNodeGetUTXO        Services = 2
+	ServicesNodeBloom          Services = 4
+	ServicesNodeWitness        Services = 8
+	ServicesNodeXThin          Services = 16
+	ServicesNodeCompactFilters Services = 64
+	ServicesNodeNetworkLimited Services = 1024
+)
+
 func (s *Services) Encode(writer io.Writer) error {
 	ui := UInt64(*s)
 	return (&ui).Encode(writer)
