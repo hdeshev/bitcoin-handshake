@@ -5,8 +5,8 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
-	"net"
-	"time"
+
+	"github.com/davecgh/go-spew/spew"
 )
 
 type Header struct {
@@ -14,20 +14,6 @@ type Header struct {
 	Command     [12]byte
 	PayloadSize UInt32
 	Checksum    [4]byte
-}
-
-type MsgVersion struct {
-	network Network
-
-	Version     UInt32 // 70015
-	Services    Services
-	Timestamp   UInt64
-	AddrRecv    NetworkAddress
-	AddrFrom    NetworkAddress
-	Nonce       UInt64
-	UserAgent   VarStr
-	StartHeight UInt32
-	Relay       UInt8
 }
 
 type Network uint
@@ -48,13 +34,6 @@ const (
 	ProtocolVersion = 70015
 	UserAgent       = "/MemeClient:0.0.1/"
 )
-
-type NetworkAddress struct {
-	Time     UInt32
-	Services UInt64
-	IP       IP
-	Port     PortNumber
-}
 
 type Services UInt64
 
@@ -93,98 +72,80 @@ func NewHeader(network Network, command Command, payload []byte) (*Header, error
 	}, nil
 }
 
-func NewVersionMsg(
-	network Network,
-	timestamp time.Time,
-	services Services,
-	addrRecv *NetworkAddress,
-	addrFrom *NetworkAddress,
-	nonce uint64,
-	startHeight uint32,
-) (*MsgVersion, error) {
-	version := &MsgVersion{
-		network:     network,
-		Version:     ProtocolVersion,
-		UserAgent:   VarStr(UserAgent),
-		Services:    services,
-		Timestamp:   UInt64(timestamp.Unix()),
-		AddrRecv:    *addrRecv,
-		AddrFrom:    *addrFrom,
-		Nonce:       UInt64(nonce),
-		StartHeight: UInt32(startHeight),
-		Relay:       UInt8(0),
-	}
-	return version, nil
-}
-
-func NewIP4Address(services Services, addr string) (*NetworkAddress, error) {
-	resolved, err := net.ResolveTCPAddr("tcp4", addr)
-	if err != nil {
-		return nil, fmt.Errorf("invalid address %s: %w", addr, err)
-	}
-	return &NetworkAddress{
-		Time:     UInt32(0),
-		Services: UInt64(services),
-		IP:       IP(resolved.IP),
-		Port:     PortNumber(resolved.Port),
-	}, nil
-}
-
 func (header *Header) Encode(writer io.Writer) error {
 	return encode(writer,
 		step("magic", RawBytes(header.Magic[:])),
 		step("command", RawBytes(header.Command[:])),
-		step("payload size", header.PayloadSize),
+		step("payload size", &header.PayloadSize),
 		step("checksum", RawBytes(header.Checksum[:])),
 	)
 }
 
-func (version *MsgVersion) Encode(writer io.Writer) error {
+func (header *Header) GetCommand() Command {
+	name := string(bytes.TrimRight(header.Command[:], "\x00"))
+	return Command(name)
+}
+
+func (header *Header) Decode(reader io.Reader) error {
+	return decode(reader,
+		step("magic", RawBytes(header.Magic[:])),
+		step("command", RawBytes(header.Command[:])),
+		step("payload size", &header.PayloadSize),
+		step("checksum", RawBytes(header.Checksum[:])),
+	)
+}
+
+// Builds a header and sends it and the message to the writer.
+func SendMessage(network Network, message Encodable, writer io.Writer) error {
 	msgBuf := bytes.NewBuffer(nil)
 
-	err := encode(msgBuf,
-		step("version", version.Version),
-		step("services", version.Services),
-		step("timestamp", version.Timestamp),
-		step("addr_recv", version.AddrRecv),
-		step("addr_from", version.AddrFrom),
-		step("nonce", version.Nonce),
-		step("user_agent", version.UserAgent),
-		step("start_height", version.StartHeight),
-		step("relay", version.Relay),
-	)
+	err := message.Encode(msgBuf)
 	if err != nil {
-		return fmt.Errorf("error serializing message fields: %w", err)
+		return fmt.Errorf("error encoding message: %w", err)
 	}
-
-	header, err := NewHeader(version.network, VersionCommand, msgBuf.Bytes())
+	header, err := NewHeader(network, VersionCommand, msgBuf.Bytes())
 	if err != nil {
 		return fmt.Errorf("error creating header: %w", err)
 	}
 
 	err = header.Encode(writer)
 	if err != nil {
-		return fmt.Errorf("error serializing header: %w", err)
+		return fmt.Errorf("error encoding header: %w", err)
 	}
 	_, err = msgBuf.WriteTo(writer)
 	if err != nil {
-		return fmt.Errorf("error serializing message: %w", err)
+		return fmt.Errorf("error encoding message: %w", err)
 	}
 	return nil
 }
 
-func (addr NetworkAddress) Encode(writer io.Writer) error {
-	steps := []encodeStep{
-		step("time", addr.Time),
-		step("services", addr.Services),
-		step("ip", addr.IP),
-		step("port", addr.Port),
+func createMessage(command Command) (Encodable, error) {
+	b := []byte(command)
+	spew.Dump(b)
+	switch command {
+	case VersionCommand:
+		return &MsgVersion{}, nil
+	default:
+		return nil, fmt.Errorf("unknown command: '%s'", command)
 	}
-	// Address timestamp is not used and not sent in version messages
-	if addr.Time > 0 {
-		return encode(writer, steps...)
+}
+
+func ReceiveMessage(reader io.Reader) (*Header, Encodable, error) {
+	header := &Header{}
+	err := header.Decode(reader)
+	if err != nil {
+		return nil, nil, fmt.Errorf("error decoding header: %w", err)
 	}
-	return encode(writer, steps[1:]...)
+
+	msg, err := createMessage(header.GetCommand())
+	if err != nil {
+		return nil, nil, fmt.Errorf("error creating message: %w", err)
+	}
+	err = msg.Decode(reader)
+	if err != nil {
+		return nil, nil, fmt.Errorf("error decoding message: %w", err)
+	}
+	return header, msg, nil
 }
 
 func calculateChecksum(payload []byte) [4]byte {

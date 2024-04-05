@@ -9,6 +9,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/pkg/errors"
 
 	"deshev.com/bitcoin-handshake/btc/encoding"
@@ -60,7 +61,6 @@ func (c *BTCClient) Connect() error {
 		return errors.Wrap(err, "failed to create recv address")
 	}
 	version, err := encoding.NewVersionMsg(
-		encoding.NetworkRegtest,
 		time.Now(),
 		0,
 		addrRecv,
@@ -72,15 +72,17 @@ func (c *BTCClient) Connect() error {
 		return errors.Wrap(err, "failed to create version message")
 	}
 
-	err = version.Encode(writer)
+	err = encoding.SendMessage(encoding.NetworkRegtest, version, writer)
 	if err != nil {
-		return errors.Wrap(err, "failed serializing version")
+		return errors.Wrap(err, "failed sending version")
 	}
 
-	headerSize := 24
-	inHeader := make([]byte, headerSize)
-	nn, err := io.ReadFull(reader, inHeader)
-	c.log.Info("read data", "nn", nn, "size", len(inHeader), "data", string(inHeader), "error", err)
+	header, msg, err := encoding.ReceiveMessage(reader)
+	if err != nil {
+		return errors.Wrap(err, "failed receiving message")
+	}
+	spew.Dump(header)
+	spew.Dump(msg)
 
 	return fmt.Errorf("TODO")
 }

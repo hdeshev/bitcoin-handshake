@@ -2,11 +2,11 @@ package encoding
 
 import (
 	"bytes"
+	"encoding/hex"
 	"fmt"
 	"regexp"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -67,101 +67,56 @@ func Test_Header_Encode(t *testing.T) {
 	}
 }
 
-func Test_NetworkAddress_Encode(t *testing.T) {
-	testTime := time.Date(2024, time.April, 1, 0, 0, 0, 0, time.UTC)
+func Test_Header_Decode(t *testing.T) {
+	versionCommand := [12]byte{}
+	commandStr := "version"
+	copy(versionCommand[:], commandStr)
+
+	payload := []byte("test data ")
+
 	tests := []struct {
-		name   string
-		addr   *NetworkAddress
-		want   string
-		err    error
-		errStr string
+		name  string
+		input []byte
+		want  *Header
 	}{
 		{
-			name: "IPv4",
-			addr: noErr(t, func() (*NetworkAddress, error) {
-				return NewIP4Address(1, "10.0.0.1:8333")
-			}),
-			want: strip(`
-			01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-			00 00 FF FF 0A 00 00 01 20 8D`),
-		},
-		{
-			name: "IPv4 with time",
-			addr: noErr(t, func() (*NetworkAddress, error) {
-				a, err := NewIP4Address(1, "10.0.0.1:8333")
-				if err != nil {
-					return nil, err
-				}
-				a.Time = UInt32(testTime.Unix())
-				return a, nil
-			}),
-			want: strip(`
-			00 F9 09 66 01 00 00 00 00 00 00 00 00 00 00 00
-			00 00 00 00 00 00 FF FF 0A 00 00 01 20 8D`),
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			buf := bytes.NewBuffer(nil)
-			err := tt.addr.Encode(buf)
-			assert.NoError(t, err)
-
-			got := formatBinary(buf.Bytes())
-			assert.Equal(t, tt.want, got)
-		})
-	}
-}
-
-func Test_Version_Encode(t *testing.T) {
-	docsTime := time.Unix(0x50D0B211, 0)
-	recvAddr := noErr(t, func() (*NetworkAddress, error) {
-		return NewIP4Address(ServicesNodeNetwork, "0.0.0.0:0")
-	})
-	fromAddr := noErr(t, func() (*NetworkAddress, error) {
-		return NewIP4Address(ServicesNone, "0.0.0.0:0")
-	})
-	tests := []struct {
-		name    string
-		version *MsgVersion
-		want    string
-	}{
-		{
-			name: "documentation example",
-			version: noErr(t, func() (*MsgVersion, error) {
-				v, err := NewVersionMsg(
-					NetworkMainnet,
-					docsTime,
-					ServicesNodeNetwork,
-					recvAddr,
-					fromAddr,
-					0x6517E68C5DB32E3B,
-					212672,
-				)
-				if err != nil {
-					return nil, err
-				}
-				v.Version = 60002
-				v.UserAgent = "/Satoshi:0.7.2/"
-				return v, nil
-			}),
-			want: strip(`
+			name: "from binary",
+			input: unformatBinary(`
 			F9 BE B4 D9 76 65 72 73 69 6F 6E 00 00 00 00 00
-			65 00 00 00 8A 80 97 A9 62 EA 00 00 01 00 00 00
-			00 00 00 00 11 B2 D0 50 00 00 00 00 01 00 00 00
-			00 00 00 00 00 00 00 00 00 00 00 00 00 00 FF FF
-			00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-			00 00 00 00 00 00 00 00 FF FF 00 00 00 00 00 00
-			3B 2E B3 5D 8C E6 17 65 0F 2F 53 61 74 6F 73 68
-			69 3A 30 2E 37 2E 32 2F C0 3E 03 00 00`),
+			0A 00 00 00 6E D5 BA D9`,
+			),
+			want: noErr(t, func() (*Header, error) {
+				return NewHeader(NetworkMainnet, VersionCommand, payload)
+			}),
+		},
+		{
+			name: "roundtrip",
+			input: func() []byte {
+				h, err := NewHeader(NetworkMainnet, VersionCommand, payload)
+				assert.NoError(t, err)
+				b := bytes.NewBuffer(nil)
+				err = h.Encode(b)
+				assert.NoError(t, err)
+				return b.Bytes()
+			}(),
+			want: noErr(t, func() (*Header, error) {
+				return NewHeader(NetworkMainnet, VersionCommand, payload)
+			}),
 		},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			buf := bytes.NewBuffer(nil)
-			err := tt.version.Encode(buf)
+			buf := bytes.NewBuffer(tt.input)
+
+			got := &Header{}
+			err := got.Decode(buf)
+
 			assert.NoError(t, err)
-			got := formatBinary(buf.Bytes())
-			assert.Equal(t, tt.want, got)
+			assert.Equal(t, tt.want.Magic, got.Magic)
+			assert.Equal(t, tt.want.Command, got.Command)
+			assert.Equal(t, tt.want.PayloadSize, got.PayloadSize)
+			assert.Equal(t, tt.want.Checksum, got.Checksum)
 		})
 	}
 }
@@ -188,6 +143,23 @@ func formatBinary(buf []byte) string {
 	}
 	out = append(out, strings.Join(line, " "))
 	return strings.Join(out, "\n")
+}
+
+func unformatBinary(s string) []byte {
+	s = strings.ReplaceAll(strip(s), "\n", " ")
+	parts := strings.Split(s, " ")
+	buf := make([]byte, len(parts))
+	for i, p := range parts {
+		b, err := hex.DecodeString(p)
+		if err != nil {
+			panic("decode error: " + err.Error())
+		}
+		if len(b) != 1 {
+			panic("invalid hex string: " + p)
+		}
+		buf[i] = b[0]
+	}
+	return buf
 }
 
 func strip(s string) string {

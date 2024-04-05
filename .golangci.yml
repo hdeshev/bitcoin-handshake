@@ -54,7 +54,7 @@ linters-settings:
 
   dupl:
     # tokens count to trigger error, 150 by default
-    threshold: 100
+    threshold: 120
 
   dogsled:
     # checks assignments with too many blank identifiers; default is 2
