@@ -121,7 +121,7 @@ node-1  | 2024-04-05T14:45:56Z [net] disconnecting peer=1
 node-1  | 2024-04-05T14:45:56Z [net] Cleared nodestate for peer=1
 ```
 
-You can flip to a separate console and ask the Bitcoin node for its peer state to confirm our client has connected using the `getpeerinfo` command
+You can flip to a separate console and ask the Bitcoin node for its peer state to confirm our client has connected using the `getpeerinfo` command. Our client uses the `/MemeClient:0.0.1/` user agent.
 
 ```
 ❯ bitcoin-cli -regtest -conf="$(pwd)/.bitcoin/bitcoin.conf" getpeerinfo
