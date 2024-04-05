@@ -74,24 +74,3 @@ test:
 ## `run`: Run `bitcoin-handshake`
 run:
 	go run main.go $(q)
-
-.PHONY: docker-gen
-## :
-## `docker-gen`: Create a production docker image for `bitcoin-handshake`
-docker-gen:
-	echo "Building docker image \`$(IMAGE):$(VERSION)\`..."
-	docker build --rm \
-		-t $(IMAGE):$(VERSION) . \
-		-f ./Dockerfile
-
-.PHONY: clean-docker
-## `clean-docker`: Delete an existing docker image
-clean-docker:
-	echo "Removing docker $(IMAGE):$(VERSION)..."
-	docker rmi -f $(IMAGE):$(VERSION)
-
-docker-run:
-	echo "Running docker image \`$(IMAGE):$(VERSION)\`..."
-	docker run --rm \
-		-p 9000:9000 \
-		-t $(IMAGE):$(VERSION)
