@@ -16,44 +16,126 @@ import (
 )
 
 type BTCClient struct {
+	messageC chan encoding.Message
+
 	ctx         context.Context
 	log         *slog.Logger
 	nodeAddress string
-	conn        net.Conn
+	reader      io.Reader
+	writer      io.Writer
+
+	handShakeVersion bool
+	handShakeVerack  bool
 }
+
+const messageBufferSize = 10
 
 func New(ctx context.Context, log *slog.Logger, cfg *config.Config) *BTCClient {
 	return &BTCClient{
 		nodeAddress: cfg.BTCNodeAddress,
 		ctx:         ctx,
 		log:         log,
+		messageC:    make(chan encoding.Message, messageBufferSize),
 	}
 }
 
-//nolint:funlen,cyclop // TODO
-func (c *BTCClient) Connect() error {
+func (c *BTCClient) Connect() (<-chan encoding.Message, error) {
 	c.log.Info("connecting to bitcoin node", "address", c.nodeAddress)
 
 	dialer := net.Dialer{}
 	conn, err := dialer.DialContext(c.ctx, "tcp", c.nodeAddress)
 	if err != nil {
-		return fmt.Errorf("failed to connect to bitcoin node: %w", err)
+		return nil, fmt.Errorf("failed to connect to bitcoin node: %w", err)
 	}
-	defer conn.Close()
 
-	c.conn = conn
-	go c.watchContext()
+	c.reader = conn
+	c.writer = conn
+	go c.cleanup(conn)
+	go c.receiveMessages()
 
-	var reader io.Reader = conn
-	var writer io.Writer = conn
+	err = c.startHandshake()
+	if err != nil {
+		return nil, fmt.Errorf("failed to start handshake: %w", err)
+	}
 
+	return c.messageC, nil
+}
+
+func (c *BTCClient) startHandshake() error {
+	version, err := c.createConnectMessage()
+	if err != nil {
+		return errors.Wrap(err, "failed to create version message")
+	}
+
+	c.log.Info("sending handshake version message")
+	err = encoding.SendMessage(encoding.NetworkRegtest, version, c.writer)
+	if err != nil {
+		return errors.Wrap(err, "failed sending version")
+	}
+
+	return nil
+}
+
+func (c *BTCClient) receiveMessages() {
+	for {
+		_, msg, err := encoding.ReceiveMessage(c.reader)
+		if err != nil {
+			c.log.Error("failed receiving message", "error", err)
+			close(c.messageC)
+			return
+		}
+		err = c.processMessage(msg)
+		if err != nil {
+			c.log.Error("failed processing message", "error", err)
+			close(c.messageC)
+			return
+		}
+	}
+}
+
+func (c *BTCClient) processMessage(msg encoding.Message) error {
+	switch msg.GetCommand() {
+	case encoding.VersionCommand:
+		if c.handShakeVersion {
+			return errors.New("received duplicate version message")
+		}
+		c.handShakeVersion = true
+		c.log.Info("received handshake version message")
+
+		verack, err := encoding.NewVerackMsg()
+		if err != nil {
+			return errors.Wrap(err, "failed to create verack message")
+		}
+		c.log.Info("sending handshake verack message")
+		err = encoding.SendMessage(encoding.NetworkRegtest, verack, c.writer)
+		if err != nil {
+			return errors.Wrap(err, "failed sending verack message")
+		}
+	case encoding.VerackCommand:
+		if c.handShakeVerack {
+			return errors.New("received duplicate verack message")
+		}
+		c.handShakeVerack = true
+		c.log.Info("received handshake verack message")
+	default:
+		handshakeDone := c.handShakeVersion && c.handShakeVerack
+		if !handshakeDone {
+			return fmt.Errorf("received unexpected message before completing handshake: %s", msg.GetCommand())
+		}
+		c.log.Debug("received message", "command", string(msg.GetCommand()), "handshake_done", handshakeDone)
+		c.messageC <- msg
+	}
+	return nil
+}
+
+func (c *BTCClient) createConnectMessage() (encoding.Message, error) {
 	addrFrom, err := encoding.NewIP4Address(0, "0.0.0.0:0")
 	if err != nil {
-		return errors.Wrap(err, "failed to create from address")
+		return nil, errors.Wrap(err, "failed to create from address")
 	}
 	addrRecv, err := encoding.NewIP4Address(0, c.nodeAddress)
 	if err != nil {
-		return errors.Wrap(err, "failed to create recv address")
+		return nil, errors.Wrap(err, "failed to create recv address")
 	}
 	version, err := encoding.NewVersionMsg(
 		time.Now(),
@@ -64,48 +146,13 @@ func (c *BTCClient) Connect() error {
 		1,
 	)
 	if err != nil {
-		return errors.Wrap(err, "failed to create version message")
+		return nil, errors.Wrap(err, "failed to create version message")
 	}
-
-	err = encoding.SendMessage(encoding.NetworkRegtest, version, writer)
-	if err != nil {
-		return errors.Wrap(err, "failed sending version")
-	}
-
-	_, msg, err := encoding.ReceiveMessage(reader)
-	if err != nil {
-		return errors.Wrap(err, "failed receiving first message")
-	}
-	c.log.Info("received handshake message", "command", string(msg.GetCommand()))
-
-	verack, err := encoding.NewVerackMsg()
-	if err != nil {
-		return errors.Wrap(err, "failed to create verack message")
-	}
-	err = encoding.SendMessage(encoding.NetworkRegtest, verack, writer)
-	if err != nil {
-		return errors.Wrap(err, "failed sending version")
-	}
-
-	_, msg, err = encoding.ReceiveMessage(reader)
-	if err != nil {
-		return errors.Wrap(err, "failed receiving second message")
-	}
-	c.log.Info("received handshake message", "command", string(msg.GetCommand()))
-
-	c.log.Info("connected to bitcoin node", "address", c.nodeAddress)
-
-	for {
-		_, msg, err = encoding.ReceiveMessage(reader)
-		if err != nil {
-			return errors.Wrap(err, "failed receiving message")
-		}
-		c.log.Info("received message", "command", string(msg.GetCommand()))
-	}
+	return version, nil
 }
 
-func (c *BTCClient) watchContext() {
+func (c *BTCClient) cleanup(conn net.Conn) {
 	<-c.ctx.Done()
 	c.log.Info("terminating client")
-	c.conn.Close()
+	conn.Close()
 }

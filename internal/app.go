@@ -6,12 +6,15 @@ import (
 	"os"
 	"os/signal"
 
+	"github.com/pkg/errors"
+
 	"deshev.com/bitcoin-handshake/btc/client"
+	"deshev.com/bitcoin-handshake/btc/encoding"
 	"deshev.com/bitcoin-handshake/config"
 )
 
 type RemoteClient interface {
-	Connect() error
+	Connect() (<-chan encoding.Message, error)
 }
 
 type Application struct {
@@ -33,7 +36,21 @@ func NewApplication(ctx context.Context, log *slog.Logger) *Application {
 }
 
 func (a *Application) StartConnection() error {
-	return a.client.Connect() //nolint:wrapcheck // boot errors are logged in main
+	messageC, err := a.client.Connect()
+	if err != nil {
+		return errors.Wrap(err, "client connect error")
+	}
+	for {
+		select {
+		case <-a.ctx.Done():
+			return context.Canceled
+		case msg, ok := <-messageC:
+			if !ok {
+				return errors.New("client connection closed")
+			}
+			a.log.Info("app received message", "command", msg.GetCommand())
+		}
+	}
 }
 
 func (a *Application) StartSignalMonitor() error {
